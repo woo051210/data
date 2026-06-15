@@ -93,3 +93,85 @@ st.success("""
 - **결론:** GRDP 상위 지역(서울, 경기)은 환자 1인당 내원일수가 약 20일로 낮지만, 하위 지역(전북, 전남 등)은 약 26~27일로 매우 높게 나타납니다.
 - **인사이트:** 병원 등의 인프라는 고소득 지역에 집중되어 있으나, 실질적인 의료 수요(아픔)는 저소득 지역에 집중되어 심각한 '의료 과부하'가 발생하고 있음을 데이터로 증명했습니다.
 """)
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import pydeck as pdk
+
+st.subheader("3. 시각화: GRDP vs 환자 1인당 내원일수 (산점도)")
+
+fig, ax = plt.subplots()
+
+x = result_df['지역내총생산']
+y = result_df['환자1인당_연간내원일수']
+
+ax.scatter(x, y)
+
+# 👉 추세선 (핵심!)
+z = np.polyfit(x, y, 1)
+p = np.poly1d(z)
+ax.plot(x, p(x), linestyle='--')
+
+ax.set_xlabel("GRDP (지역내총생산)")
+ax.set_ylabel("환자 1인당 내원일수")
+
+st.pyplot(fig)
+
+st.markdown("""
+👉 **해석:**  
+경제 수준이 낮은 지역일수록 환자의 병원 방문 횟수가 증가하는 경향이 나타남  
+→ '의료 수요의 역설' 확인
+""")
+
+coords = {
+    '서울': (37.5665, 126.9780),
+    '부산': (35.1796, 129.0756),
+    '대구': (35.8722, 128.6025),
+    '인천': (37.4563, 126.7052),
+    '광주': (35.1595, 126.8526),
+    '대전': (36.3504, 127.3845),
+    '울산': (35.5384, 129.3114),
+    '세종': (36.4800, 127.2890),
+    '경기': (37.4138, 127.5183),
+    '강원': (37.8228, 128.1555),
+    '충북': (36.6357, 127.4913),
+    '충남': (36.5184, 126.8000),
+    '전북': (35.7175, 127.1530),
+    '전남': (34.8679, 126.9910),
+    '경북': (36.4919, 128.8889),
+    '경남': (35.4606, 128.2132),
+    '제주': (33.4996, 126.5312)
+}
+
+result_df['lat'] = result_df['지역'].apply(lambda x: coords[x][0])
+result_df['lon'] = result_df['지역'].apply(lambda x: coords[x][1])
+
+st.subheader("4. 시각화: 지역별 의료 수요 지도")
+
+layer = pdk.Layer(
+    "ScatterplotLayer",
+    data=result_df,
+    get_position='[lon, lat]',
+    get_radius="환자1인당_연간내원일수 * 15000",
+    get_fill_color='[255, 환자1인당_연간내원일수 * 5, 0, 150]',
+    pickable=True
+)
+
+view_state = pdk.ViewState(
+    latitude=36.5,
+    longitude=127.8,
+    zoom=6
+)
+
+st.pydeck_chart(pdk.Deck(
+    layers=[layer],
+    initial_view_state=view_state,
+    tooltip={"text": "{지역}\n내원일수: {환자1인당_연간내원일수}"}
+))
+
+st.markdown("""
+👉 **해석:**  
+원이 클수록 의료 이용이 많은 지역  
+→ 지방에서 의료 수요가 더 높게 나타남
+""")
