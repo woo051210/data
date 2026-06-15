@@ -93,34 +93,31 @@ st.success("""
 - **결론:** GRDP 상위 지역(서울, 경기)은 환자 1인당 내원일수가 약 20일로 낮지만, 하위 지역(전북, 전남 등)은 약 26~27일로 매우 높게 나타납니다.
 - **인사이트:** 병원 등의 인프라는 고소득 지역에 집중되어 있으나, 실질적인 의료 수요(아픔)는 저소득 지역에 집중되어 심각한 '의료 과부하'가 발생하고 있음을 데이터로 증명했습니다.
 """)
-import geopandas as gpd
+
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import streamlit as st
 
-# 지도 데이터 로드 (GeoJSON 예시 경로)
-geo_path = "path_to_geojson/korea_sido.geojson"  # 시도/시군구 경계 geojson
-gdf = gpd.read_file(geo_path)
+# 데이터 로드
+med = pd.read_csv("med.csv.csv", encoding="cp949")
+grdp = pd.read_csv("grdp.csv.csv", encoding="cp949")
 
-# 예시: 합친 데이터프레임에 지역코드/값 컬럼이 있다고 가정
-# result_df = pd.DataFrame({'sido': [...], '값': [...]})  # 예: 환자1인당_연간내원일수
+# 데이터 병합 (공통 키를 sido로 가정)
+df = pd.merge(med, grdp, on="sido", how="inner")
 
-# 지역코드 매칭용 예시 컬럼 이름이 다를 수 있어 정리 필요
-# 매핑: gdf['region_id']와 result_df의 'sido'를 연결
-df_merge = gdf.merge(result_df, left_on="region_id", right_on="sido", how="left")
+# 산점도용 지표 생성
+df["환자1인당_연간내원일수"] = df["visit_days"] / df["patients"]
 
-# 지도 시각화
-fig = px.choropleth(
-    df_merge,
-    geojson=df_merge.geometry,
-    locations=df_merge.index,  # 또는 region_id
-    color="환자1인당_연간내원일수",
-    hover_data=["sido","환자1인당_연간내원일수"],
-    color_continuous_scale="YlOrRd",
+# 산점도
+fig = px.scatter(
+    df,
+    x="grdp_nominal",  # grdp.csv.csv의 열 이름이 다르면 수정
+    y="환자1인당_연간내원일수",
+    color="sido",
+    hover_data=["sigungu","patients","visit_days","grdp_nominal"]
 )
 
-fig.update_geos(fitbounds="locations", visible=False)
-fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+st.title("GRDP vs 의료 수요 산점도")
+st.plotly_chart(fig, use_container_width=True)
 
-# Streamlit에 표출
 st.plotly_chart(fig, use_container_width=True)
