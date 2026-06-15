@@ -97,27 +97,72 @@ st.success("""
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import glob
+import os
 
-# 데이터 로드
-med = pd.read_csv("med.csv.csv", encoding="cp949")
-grdp = pd.read_csv("grdp.csv.csv", encoding="cp949")
+# 데이터 로드 함수: 파일명에 의존하지 않도록 후보를 찾기
+def load_candidates(prefixes, folder="."):
+    dfs = []
+    colnames = []
+    for p in prefixes:
+        # glob으로 매칭: med*, grdp* 형태의 파일 찾기
+        pattern = os.path.join(folder, f"{p}*")
+        files = glob.glob(pattern)
+        for f in files:
+            try:
+                df = pd.read_csv(f, encoding="cp949")
+            except Exception:
+                try:
+                    df = pd.read_csv(f, encoding="utf-8")
+                except Exception:
+                    continue
+            dfs.append((f, df))
+    return dfs
 
-# 데이터 병합 (공통 키를 sido로 가정)
-df = pd.merge(med, grdp, on="sido", how="inner")
+# 후보 파일들
+med_candidates = load_candidates(["med"], ".")
+grdp_candidates = load_candidates(["grdp"], ".")
+
+# 샘플 출력 없이, 가장 먼저 읽힌 파일 사용
+def pick_first(dfs):
+    return dfs[0][1] if dfs else None
+
+med = pick_first(med_candidates)  # None이면 에러
+grdp = pick_first(grdp_candidates)
+
+# 공통 키 자동 탐색: 문자열 타입인 공통 열 탐색
+def find_common_key(df1, df2):
+    keys = [c for c in df1.columns if c in df2.columns]
+    # 간단한 우선순위: 'sido', 'region', 'region_id', 'sido_code'
+    for k in ["sido","region","region_id","sido_code"]:
+        if k in keys:
+            return k
+    # 없으면 첫 번째 공통 열 사용
+    return keys[0] if keys else None
+
+common_key = find_common_key(med, grdp)
+if common_key is None:
+    raise ValueError("공통 키를 찾을 수 없습니다. 열 이름을 확인해 주세요.")
+
+# 데이터 병합
+df = pd.merge(med, grdp, on=common_key, how="inner")
 
 # 산점도용 지표 생성
-df["환자1인당_연간내원일수"] = df["visit_days"] / df["patients"]
+# 예시로 환자 1인당 연간 내원일수
+if "visit_days" in df.columns and "patients" in df.columns:
+    df["환자1인당_연간내원일수"] = df["visit_days"] / df["patients"]
+else:
+    # 열 이름이 다르면 교체
+    df["환자1인당_연간내원일수"] = df.get("visit_days", df.get("내원일수",0)) / df.get("patients", df.get("환자수",1))
 
 # 산점도
 fig = px.scatter(
     df,
-    x="grdp_nominal",  # grdp.csv.csv의 열 이름이 다르면 수정
+    x="grdp_nominal" if "grdp_nominal" in df.columns else df.columns[ df.columns.get_loc("grdp") if "grdp" in df.columns else df.columns[0]],
     y="환자1인당_연간내원일수",
-    color="sido",
-    hover_data=["sigungu","patients","visit_days","grdp_nominal"]
+    color=common_key,
+    hover_data=[col for col in ["sigungu","patients","visit_days","grdp_nominal"] if col in df.columns]
 )
 
-st.title("GRDP vs 의료 수요 산점도")
-st.plotly_chart(fig, use_container_width=True)
-
+st.title("GRDP vs 의료 수요 산점도 (동적 파일명 대응)")
 st.plotly_chart(fig, use_container_width=True)
